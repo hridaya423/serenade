@@ -1,11 +1,10 @@
 'use client';
 
 import React, { Suspense } from 'react';
-import { Disc, Sparkles, TrendingUp, Radio, Heart, Crown, Headphones, Home, Github } from 'lucide-react';
+import { Disc, Sparkles, TrendingUp, Home, Github } from 'lucide-react';
 import MusicFeatured from '@/components/TrendingSection';
 import MusicDiscovery from '@/components/MusicDiscovery';
 import Link from 'next/link';
-
 export default function Dashboard() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-white via-slate-50/50 to-white">
@@ -13,7 +12,6 @@ export default function Dashboard() {
         <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-100/50 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-teal-100/50 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
-
       <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-md z-50 border-b border-slate-100">
         <div className="container mx-auto px-6">
           <div className="flex items-center justify-between h-16">
@@ -52,33 +50,6 @@ export default function Dashboard() {
               Discover new sounds tailored just for you
             </p>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-16">
-            {[
-              { icon: Radio, label: "Listening Minutes", value: "142K" },
-              { icon: Heart, label: "Liked Songs", value: "486" },
-              { icon: Crown, label: "Top Genre", value: "Jazz" },
-              { icon: Headphones, label: "Daily Streak", value: "12 Days" }
-            ].map((stat) => (
-              <div key={stat.label} className="relative group">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-100 to-teal-100 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-all duration-500"></div>
-                <div className="relative bg-white rounded-2xl p-8 border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-xl bg-gradient-to-r from-blue-50 to-teal-50">
-                      <stat.icon className="w-6 h-6 text-teal-600" />
-                    </div>
-                    <div>
-                      <p className="text-slate-600 text-sm font-medium">{stat.label}</p>
-                      <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-teal-600 bg-clip-text text-transparent">
-                        {stat.value}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
           <div className="space-y-16">
             <section className="relative">
               <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-teal-50 rounded-3xl blur-xl opacity-60"></div>
