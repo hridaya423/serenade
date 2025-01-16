@@ -1,6 +1,6 @@
 # Serenade
 
-![Serenade Demo]()
+![Serenade Demo](https://cloud-4v4j0f7m8-hack-club-bot.vercel.app/0image.png)
 
 Serenade is an AI-powered music discovery platform that helps users find their next favorite artist through personalized recommendations, trending analysis, and mood-based curation.
 
