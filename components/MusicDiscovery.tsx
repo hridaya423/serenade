@@ -25,20 +25,80 @@ type Song = {
   id: string;
   title: string;
   artist: string;
-  albumArt: string;
+  albumArt: Array<{url: string, height: number, width: number}> | string;
   year: string | number;
   description?: string;
-  genre?: string | string[];
+  genre?: string[];
   features?: Partial<MoodFeatures>;
   duration?: number;
   bpm?: number;
   key?: string;
   popularity?: number;
   preview_url?: string;
-  external_urls?: {
-    spotify?: string;
-    youtube?: string;
-  };
+  externalUrl?: string;
+  source?: string;
+};
+const MAX_RETRIES = 3;
+const INITIAL_TIMEOUT = 20000;
+const MAX_TIMEOUT = 25000;
+
+const fetchWithTimeout = async (url: string, options: RequestInit, timeout: number) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+};
+
+const retryFetch = async (url: string, options: RequestInit) => {
+  let lastError;
+  
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const timeout = Math.min(INITIAL_TIMEOUT * Math.pow(1.5, attempt), MAX_TIMEOUT);
+      
+      const response = await fetchWithTimeout(url, options, timeout);
+      
+      if (response.status === 504) {
+        throw new Error('TIMEOUT');
+      }
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        if (response.status === 429 || response.status === 529) {
+          throw new Error('TEMP_ERROR');
+        }
+        throw new Error(data.error || 'Failed to fetch recommendations');
+      }
+      
+      return data;
+    } catch (error) {
+      lastError = error;
+      
+      const shouldRetry = (error as Error).message === 'TIMEOUT' || 
+                         (error as Error).message === 'TEMP_ERROR' ||
+                         (error as Error).name === 'AbortError';
+                         
+      if (!shouldRetry || attempt === MAX_RETRIES - 1) {
+        throw error;
+      }
+      
+      const delay = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 1000, 8000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
 };
 
 const FallbackImage = () => (
@@ -48,7 +108,7 @@ const FallbackImage = () => (
 );
 
 interface SongImageProps {
-  src: string;
+  src: string | Array<{url: string, height: number, width: number}>;
   alt: string;
   className?: string;
 }
@@ -64,10 +124,13 @@ const SongImage: React.FC<SongImageProps> = ({ src, alt, className }) => {
     );
   }
 
+  const imageUrl = typeof src === 'string' ? src : 
+                  Array.isArray(src) && src.length > 0 ? src[0].url : '';
+
   return (
     <div className={className}>
       <img
-        src={src}
+        src={imageUrl}
         alt={alt}
         onError={() => setError(true)}
         className="w-full h-full object-cover rounded-lg"
@@ -77,6 +140,7 @@ const SongImage: React.FC<SongImageProps> = ({ src, alt, className }) => {
 };
 
 type CriteriaType = 'mood' | 'genre' | 'similar';
+
 const MusicDiscovery: React.FC = () => {
   const [activeCriteria, setActiveCriteria] = useState<Set<CriteriaType>>(new Set(['mood']));
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
@@ -85,6 +149,7 @@ const MusicDiscovery: React.FC = () => {
   const [recommendations, setRecommendations] = useState<Song[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const toggleCriteria = (criteria: CriteriaType) => {
     const newCriteria = new Set(activeCriteria);
@@ -104,8 +169,10 @@ const MusicDiscovery: React.FC = () => {
     
     setLoading(true);
     setError(null);
+    setRetryCount(0);
+    
     try {
-      const response = await fetch('/api/recommendations', {
+      const data = await retryFetch('/api/recommendations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -115,13 +182,28 @@ const MusicDiscovery: React.FC = () => {
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to fetch recommendations');
+      if (!data.recommendations?.length) {
+        throw new Error('No recommendations found');
+      }
 
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-      setRecommendations(data.recommendations || []);
+      setRecommendations(data.recommendations);
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      let errorMessage = 'An unexpected error occurred';
+      
+      if (err instanceof Error) {
+        if (err.message === 'TIMEOUT') {
+          errorMessage = 'The request took too long. Try again with fewer criteria.';
+        } else if (err.message === 'TEMP_ERROR') {
+          errorMessage = 'Service is busy. Please try again in a moment.';
+        } else if (err.name === 'AbortError') {
+          errorMessage = 'Request was interrupted. Please try again.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(errorMessage);
       console.error('Error fetching recommendations:', err);
     } finally {
       setLoading(false);
@@ -188,6 +270,7 @@ const MusicDiscovery: React.FC = () => {
             </div>
           </div>
         )}
+
         {activeCriteria.has('genre') && (
           <div className="space-y-6">
             <h3 className="text-xl font-semibold flex items-center gap-2 text-slate-800">
@@ -217,6 +300,7 @@ const MusicDiscovery: React.FC = () => {
             </div>
           </div>
         )}
+
         {activeCriteria.has('similar') && (
           <div className="space-y-6">
             <h3 className="text-xl font-semibold flex items-center gap-2 text-slate-800">
@@ -236,6 +320,7 @@ const MusicDiscovery: React.FC = () => {
           </div>
         )}
       </div>
+
       {(selectedMood || selectedGenre || searchQuery) && (
         <div className="flex flex-wrap gap-2">
           {selectedMood && (
@@ -275,6 +360,7 @@ const MusicDiscovery: React.FC = () => {
           )}
         </div>
       )}
+
       <button
         onClick={handleSearch}
         disabled={loading || (!selectedMood && !selectedGenre && !searchQuery)}
@@ -283,7 +369,9 @@ const MusicDiscovery: React.FC = () => {
         {loading ? (
           <span className="flex items-center justify-center gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
-            Curating your perfect mix...
+            {retryCount > 0 ? 
+              `Retrying... (Attempt ${retryCount + 1}/${MAX_RETRIES})` :
+              'Curating your perfect mix...'}
           </span>
         ) : (
           <span className="flex items-center justify-center gap-2">
@@ -292,12 +380,14 @@ const MusicDiscovery: React.FC = () => {
           </span>
         )}
       </button>
+
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg flex items-center gap-2">
           <X className="w-5 h-5" />
           {error}
         </div>
       )}
+
       {recommendations.length > 0 && (
         <div className="space-y-6">
           <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -318,13 +408,14 @@ const MusicDiscovery: React.FC = () => {
                       alt={song.title}
                       className="w-full h-full shadow-md group-hover:shadow-xl transition-all duration-300"
                     />
-                    <button 
-                      className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 rounded-lg flex items-center justify-center"
-                      onClick={() => window.open(song.preview_url, '_blank')}
-                      disabled={!song.preview_url}
-                    >
-                      <Play className="w-8 h-8 text-white" />
-                    </button>
+                    {song.preview_url && (
+                      <button 
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 rounded-lg flex items-center justify-center"
+                        onClick={() => window.open(song.preview_url, '_blank')}
+                      >
+                        <Play className="w-8 h-8 text-white" />
+                      </button>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-4">
@@ -339,11 +430,11 @@ const MusicDiscovery: React.FC = () => {
                           <Clock className="w-4 h-4" />
                           {song.year}
                         </span>
-                        {song.external_urls?.spotify && (
+                        {song.externalUrl && (
                           <button 
-                            onClick={() => window.open(song.external_urls?.spotify, '_blank')}
+                            onClick={() => window.open(song.externalUrl, '_blank')}
                             className="p-2 rounded-full hover:bg-white/60 text-slate-400 hover:text-blue-500 transition-colors"
-                            aria-label="Open in Spotify"
+                            aria-label="Open in Music Service"
                           >
                             <ExternalLink className="w-5 h-5" />
                           </button>
@@ -355,11 +446,11 @@ const MusicDiscovery: React.FC = () => {
                         {song.description}
                       </p>
                     )}
-                    {song.genre && (
+                    {song.genre && song.genre.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {(Array.isArray(song.genre) ? song.genre : [song.genre]).map((g: string) => (
+                        {song.genre.map((g) => (
                           <span 
-                            key={g} 
+                            key={g}
                             className="text-xs px-2 py-1 bg-slate-100 text-slate-600 rounded-full hover:bg-slate-200 transition-colors"
                           >
                             {g}
